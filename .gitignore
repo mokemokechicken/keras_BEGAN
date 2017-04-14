@@ -1,0 +1,9 @@
+.idea
+.python-version
+*.pyc
+__pycache__
+.DS_Store
+*.pkl
+.env
+*.hd5
+*.jpg
