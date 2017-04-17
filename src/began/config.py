@@ -15,6 +15,7 @@ class BEGANConfig:
         self.image_height = 64
         self.n_filters = 128
         self.hidden_size = 64
+        self.initial_k = 0
         self.gamma = 0.5
         self.lambda_k = 0.001
         self.batch_size = 16
@@ -25,3 +26,4 @@ class BEGANConfig:
         self.autoencoder_weight_filename = '%s/autoencoder.hd5' % (self.dataset_dir, )
         self.generator_weight_filename = '%s/generator.hd5' % (self.dataset_dir, )
         self.discriminator_weight_filename = '%s/discriminator.hd5' % (self.dataset_dir, )
+        self.training_log = '%s/training_log.csv' % (self.generated_dir, )

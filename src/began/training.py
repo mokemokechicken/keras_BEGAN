@@ -35,11 +35,12 @@ def training(config: BEGANConfig, epochs=3):
     load_model_weight(generator, config.generator_weight_filename)
     load_model_weight(discriminator, config.discriminator_weight_filename)
 
-    loss_d = DiscriminatorLoss()  # special? loss object for BEGAN
+    loss_d = DiscriminatorLoss(config.initial_k)  # special? loss object for BEGAN
     discriminator.compile(optimizer=Adam(), loss=loss_d)
     generator.compile(optimizer=Adam(), loss=create_generator_loss(autoencoder))
     lr_decay_step = 0
     last_m_global = np.Inf
+    log_recorder = LogRecorder(config.training_log)
 
     np.random.seed(999)
     for ep in range(1, epochs+1):
@@ -57,8 +58,9 @@ def training(config: BEGANConfig, epochs=3):
         K.set_value(discriminator.optimizer.lr, lr)
         m_global_history = []
         info("LearningRate=%.7f" % lr)
+        batch_len = len(dataset)//batch_size
 
-        for b_idx in range(len(dataset)//batch_size):
+        for b_idx in range(batch_len):
             index_list = index_order[b_idx*batch_size:(b_idx+1)*batch_size]
 
             # training discriminator
@@ -75,10 +77,22 @@ def training(config: BEGANConfig, epochs=3):
             m_global_history.append(loss_d.m_global)
             if b_idx > 0:
                 print(UP + UP)
-            info("ep=%s, b_idx=%s/%s, MGlobal=%.5f, "
-                 "Loss(D)=%.5f, Loss(G)=%.5f, Loss(X)=%.5f, Loss(G(Zd))=%.5f, K=%.6f" %
-                 (ep, b_idx, len(dataset)//batch_size-1, np.average(m_global_history),
-                  loss_discriminator, loss_generator, loss_d.loss_real_x, loss_d.loss_gen_x, loss_d.k))
+            log_info = dict(
+                epoch=ep,
+                batch_index=b_idx,
+                batch_len=batch_len,
+                m_global=loss_d.m_global,
+                loss_discriminator=loss_discriminator,
+                loss_generator=loss_generator,
+                loss_real_x=loss_d.loss_real_x,
+                loss_gen_x=loss_d.loss_gen_x,
+                k=loss_d.k,
+                lr=lr,
+            )
+            info("ep=%(epoch)s, b_idx=%(batch_index)s/%(batch_len)s, MGlobal=%(m_global).5f, "
+                 "Loss(D)=%(loss_discriminator).5f, Loss(G)=%(loss_generator).5f, Loss(X)=%(loss_real_x).5f, "
+                 "Loss(G(Zd))=%(loss_gen_x).5f, K=%(k).6f" % log_info)
+            log_recorder.write(**log_info)
 
         m_global = np.average(m_global_history)
         if last_m_global <= m_global:  # decay LearningRate
@@ -104,10 +118,10 @@ def create_generator_loss(autoencoder: Container):
 class DiscriminatorLoss:
     __name__ = 'discriminator_loss'
 
-    def __init__(self, lambda_k=0.001, gamma=0.5):
+    def __init__(self, initial_k=0, lambda_k=0.001, gamma=0.5):
         self.lambda_k = lambda_k
         self.gamma = gamma
-        self.k_var = K.variable(0, dtype=K.floatx(), name="discriminator_k")
+        self.k_var = K.variable(initial_k, dtype=K.floatx(), name="discriminator_k")
         self.m_global_var = K.variable(0, dtype=K.floatx(), name="m_global")
         self.loss_real_x_var = K.variable(0, name="loss_real_x")  # for observation
         self.loss_gen_x_var = K.variable(0, name="loss_gen_x")    # for observation
@@ -162,6 +176,20 @@ class DiscriminatorLoss:
 def info(msg):
     now = datetime.now()
     print("%s: %s" % (now, msg))
+
+
+class LogRecorder:
+    def __init__(self, log_filename):
+        self.file_out = open(log_filename, "wt")
+        self.columns = None
+
+    def write(self, **kwargs):
+        if not self.columns:
+            self.columns = list(sorted(kwargs.keys()))
+            self.file_out.write(",".join(self.columns) + "\n")
+        values = [str(kwargs.get(x, "")) for x in self.columns]
+        self.file_out.write(",".join(values) + "\n")
+        self.file_out.flush()
 
 
 if __name__ == '__main__':
