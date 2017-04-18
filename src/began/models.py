@@ -99,12 +99,14 @@ def build_decoder_layer(config: BEGANConfig, input_layer):
 
 def convolution_image_for_encoding(in_x, filters, strides=(1, 1)):
     x = Convolution2D(filters, (3, 3), activation="elu", padding="same")(in_x)
+    x = Convolution2D(filters, (3, 3), activation="elu", padding="same")(x)
     x = Convolution2D(filters, (3, 3), activation="elu", padding="same", strides=strides)(x)
     return x
 
 
 def convolution_image_for_decoding(in_x, filters, upsample=None):
     x = Convolution2D(filters, (3, 3), activation="elu", padding="same")(in_x)
+    x = Convolution2D(filters, (3, 3), activation="elu", padding="same")(x)
     x = Convolution2D(filters, (3, 3), activation="elu", padding="same")(x)
     if upsample:
         x = UpSampling2D()(x)

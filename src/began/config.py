@@ -20,7 +20,7 @@ class BEGANConfig:
         self.lambda_k = 0.001
         self.batch_size = 16
         self.initial_lr = 0.0001
-        self.min_lr = 0.00005
+        self.min_lr = 0.00001
         self.lr_decay_rate = 0.9
 
         self.autoencoder_weight_filename = '%s/autoencoder.hd5' % (self.dataset_dir, )
