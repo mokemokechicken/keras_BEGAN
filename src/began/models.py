@@ -11,7 +11,7 @@ from began.config import BEGANConfig
 def build_model(config: BEGANConfig):
     K.set_image_data_format('channels_last')
 
-    autoencoder, autoencoder_not_trainable = build_autoencoder(config)
+    autoencoder, autoencoder_not_trainable = build_autoencoder(config, name="autoencoder")
     generator = build_generator(config)
     discriminator = build_discriminator(config, autoencoder)
 
@@ -24,19 +24,19 @@ def load_model_weight(model: Container, weight_file):
         model.load_weights(weight_file)
 
 
-def build_autoencoder(config: BEGANConfig):
+def build_autoencoder(config: BEGANConfig, name):
     n_filters = config.n_filters
     hidden_size = config.hidden_size
 
     dx = image_input = Input((config.image_height, config.image_width, 3))
 
-    dx = convolution_image_for_encoding(dx, n_filters, strides=(2, 2))      # output: (N, 32, 32, n_filters)
-    dx = convolution_image_for_encoding(dx, n_filters * 2, strides=(2, 2))  # output: (N, 16, 16, n_filters*2)
-    dx = convolution_image_for_encoding(dx, n_filters * 3, strides=(2, 2))  # output: (N, 8, 8, n_filters*3)
-    dx = convolution_image_for_encoding(dx, n_filters * 4, strides=(1, 1))  # output: (N, 8, 8, n_filters*4)
+    dx = convolution_image_for_encoding(dx, n_filters, strides=(2, 2), name="%s/enc/L1" % name)      # output: (N, 32, 32, n_filters)
+    dx = convolution_image_for_encoding(dx, n_filters * 2, strides=(2, 2), name="%s/enc/L2" % name)  # output: (N, 16, 16, n_filters*2)
+    dx = convolution_image_for_encoding(dx, n_filters * 3, strides=(2, 2), name="%s/enc/L3" % name)  # output: (N, 8, 8, n_filters*3)
+    dx = convolution_image_for_encoding(dx, n_filters * 4, strides=(1, 1), name="%s/enc/L4" % name)  # output: (N, 8, 8, n_filters*4)
     dx = Flatten()(dx)
-    hidden = Dense(hidden_size, activation='linear')(dx)
-    image_output = build_decoder_layer(config, hidden)
+    hidden = Dense(hidden_size, activation='linear', name="%s/enc/Dense" % name)(dx)
+    image_output = build_decoder_layer(config, hidden, name="%s/dec" % name)
 
     autoencoder = Container(image_input, image_output, name="autoencoder")
     autoencoder_not_trainable = Container(image_input, image_output, name="autoencoder_not_trainable")
@@ -48,8 +48,8 @@ def build_autoencoder(config: BEGANConfig):
 def build_generator(config: BEGANConfig):
     hidden_size = config.hidden_size
     z_input = Input((hidden_size, ))
-    image_output = build_decoder_layer(config, z_input)
-    generator = Model(z_input, image_output)
+    image_output = build_decoder_layer(config, z_input, name="generator")
+    generator = Model(z_input, image_output, name="generator")
     return generator
 
 
@@ -79,7 +79,7 @@ def build_discriminator(config: BEGANConfig, autoencoder: Container):
     return discriminator
 
 
-def build_decoder_layer(config: BEGANConfig, input_layer):
+def build_decoder_layer(config: BEGANConfig, input_layer, name):
     """
     generator and decoder( of discriminator) have same network structure, but don't share weights.
     This function takes different input layer, flow another network, and return different output layer.
@@ -87,27 +87,27 @@ def build_decoder_layer(config: BEGANConfig, input_layer):
     n_filters = config.n_filters
 
     dx = input_layer  # (64, )
-    dx = Dense((8*8*n_filters), activation='linear')(dx)
+    dx = Dense((8*8*n_filters), activation='linear', name="%s/Dense" % name)(dx)
     dx = Reshape((8, 8, n_filters))(dx)
-    dx = convolution_image_for_decoding(dx, n_filters, upsample=True)   # output: (N, 16, 16, n_filters)
-    dx = convolution_image_for_decoding(dx, n_filters, upsample=True)   # output: (N, 32, 32, n_filters)
-    dx = convolution_image_for_decoding(dx, n_filters, upsample=True)   # output: (N, 64, 64, n_filters)
-    dx = convolution_image_for_decoding(dx, n_filters, upsample=False)  # output: (N, 64, 64, n_filters)
-    image_output = Convolution2D(3, (3, 3), padding="same", activation="linear")(dx)  # output: (N, 64, 64, 3), activation shuold be linear?
+    dx = convolution_image_for_decoding(dx, n_filters, upsample=True, name="%s/L1" % name)   # output: (N, 16, 16, n_filters)
+    dx = convolution_image_for_decoding(dx, n_filters, upsample=True, name="%s/L2" % name)   # output: (N, 32, 32, n_filters)
+    dx = convolution_image_for_decoding(dx, n_filters, upsample=True, name="%s/L3" % name)   # output: (N, 64, 64, n_filters)
+    dx = convolution_image_for_decoding(dx, n_filters, upsample=False, name="%s/L4" % name)  # output: (N, 64, 64, n_filters)
+    image_output = Convolution2D(3, (3, 3), padding="same", activation="linear", name="%s/FinalConv" % name)(dx)  # output: (N, 64, 64, 3), activation shuold be linear?
     return image_output
 
 
-def convolution_image_for_encoding(in_x, filters, strides=(1, 1)):
-    x = Convolution2D(filters, (3, 3), activation="elu", padding="same")(in_x)
-    x = Convolution2D(filters, (3, 3), activation="elu", padding="same")(x)
-    x = Convolution2D(filters, (3, 3), activation="elu", padding="same", strides=strides)(x)
+def convolution_image_for_encoding(in_x, filters, strides=(1, 1), name=None):
+    x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv1" % name)(in_x)
+    # x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv2" % name)(x)
+    x = Convolution2D(filters, (3, 3), activation="elu", padding="same", strides=strides, name="%s/Conv2" % name)(x)
     return x
 
 
-def convolution_image_for_decoding(in_x, filters, upsample=None):
-    x = Convolution2D(filters, (3, 3), activation="elu", padding="same")(in_x)
-    x = Convolution2D(filters, (3, 3), activation="elu", padding="same")(x)
-    x = Convolution2D(filters, (3, 3), activation="elu", padding="same")(x)
+def convolution_image_for_decoding(in_x, filters, upsample=None, name=None):
+    x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv1" % name)(in_x)
+    # x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv2" % name)(x)
+    x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv2" % name)(x)
     if upsample:
         x = UpSampling2D()(x)
     return x

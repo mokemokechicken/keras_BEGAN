@@ -42,8 +42,14 @@ def training(config: BEGANConfig, epochs=3):
     last_m_global = np.Inf
     log_recorder = LogRecorder(config.training_log)
 
-    np.random.seed(999)
+    # print("Generator Update Variables")
+    # print_model_updates(generator)
+    #
+    # print("Discriminator Update Variables")
+    # print_model_updates(discriminator)
+
     for ep in range(1, epochs+1):
+        np.random.seed(ep * 100)
         # generate Z layer values for discriminator and generator
         zd = np.random.uniform(-1, 1, (len(dataset), config.hidden_size))
         zg = np.random.uniform(-1, 1, (len(dataset), config.hidden_size))
@@ -190,6 +196,15 @@ class LogRecorder:
         values = [str(kwargs.get(x, "")) for x in self.columns]
         self.file_out.write(",".join(values) + "\n")
         self.file_out.flush()
+
+
+def print_model_updates(model):
+    training_updates = model.optimizer.get_updates(
+        model._collected_trainable_weights,
+        model.constraints,
+        model.total_loss)
+    updates = model.updates + training_updates
+    print("\n".join(sorted([str(x[0]) for x in updates])))
 
 
 if __name__ == '__main__':
