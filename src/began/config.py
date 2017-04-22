@@ -14,6 +14,7 @@ class BEGANConfig:
         self.image_width = 64
         self.image_height = 64
         self.n_filters = 128
+        self.n_layer_in_conv = 2
         self.hidden_size = 64
         self.initial_k = 0
         self.gamma = 0.5

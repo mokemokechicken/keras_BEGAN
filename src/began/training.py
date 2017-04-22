@@ -1,4 +1,5 @@
 # coding: utf8
+import os
 import pickle
 from datetime import datetime
 
@@ -30,7 +31,7 @@ def training(config: BEGANConfig, epochs=3):
     batch_size = config.batch_size
 
     # building model and loading weight(if exists)
-    autoencoder, autoencoder_not_trainable, generator, discriminator = build_model(config)
+    autoencoder, generator, discriminator = build_model(config)
     load_model_weight(autoencoder, config.autoencoder_weight_filename)
     load_model_weight(generator, config.generator_weight_filename)
     load_model_weight(discriminator, config.discriminator_weight_filename)
@@ -186,6 +187,8 @@ def info(msg):
 
 class LogRecorder:
     def __init__(self, log_filename):
+        if not os.path.exists(os.path.dirname(log_filename)):
+            os.makedirs((os.path.dirname(log_filename)))
         self.file_out = open(log_filename, "wt")
         self.columns = None
 

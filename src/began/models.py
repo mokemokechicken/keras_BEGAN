@@ -11,11 +11,11 @@ from began.config import BEGANConfig
 def build_model(config: BEGANConfig):
     K.set_image_data_format('channels_last')
 
-    autoencoder, autoencoder_not_trainable = build_autoencoder(config, name="autoencoder")
+    autoencoder = build_autoencoder(config)
     generator = build_generator(config)
     discriminator = build_discriminator(config, autoencoder)
 
-    return autoencoder, autoencoder_not_trainable, generator, discriminator
+    return autoencoder, generator, discriminator
 
 
 def load_model_weight(model: Container, weight_file):
@@ -24,33 +24,73 @@ def load_model_weight(model: Container, weight_file):
         model.load_weights(weight_file)
 
 
-def build_autoencoder(config: BEGANConfig, name):
-    n_filters = config.n_filters
-    hidden_size = config.hidden_size
-
-    dx = image_input = Input((config.image_height, config.image_width, 3))
-
-    dx = convolution_image_for_encoding(dx, n_filters, strides=(2, 2), name="%s/enc/L1" % name)      # output: (N, 32, 32, n_filters)
-    dx = convolution_image_for_encoding(dx, n_filters * 2, strides=(2, 2), name="%s/enc/L2" % name)  # output: (N, 16, 16, n_filters*2)
-    dx = convolution_image_for_encoding(dx, n_filters * 3, strides=(2, 2), name="%s/enc/L3" % name)  # output: (N, 8, 8, n_filters*3)
-    dx = convolution_image_for_encoding(dx, n_filters * 4, strides=(1, 1), name="%s/enc/L4" % name)  # output: (N, 8, 8, n_filters*4)
-    dx = Flatten()(dx)
-    hidden = Dense(hidden_size, activation='linear', name="%s/enc/Dense" % name)(dx)
-    image_output = build_decoder_layer(config, hidden, name="%s/dec" % name)
-
-    autoencoder = Container(image_input, image_output, name="autoencoder")
-    autoencoder_not_trainable = Container(image_input, image_output, name="autoencoder_not_trainable")
-    autoencoder_not_trainable.trainable = False
-
-    return autoencoder, autoencoder_not_trainable
+def build_autoencoder(config: BEGANConfig, name="autoencoder"):
+    encoder = build_encoder(config, name="%s/encoder" % name)
+    decoder = build_decoder(config, name="%s/decoder" % name)
+    autoencoder = Container(encoder.inputs, decoder(encoder.outputs), name=name)
+    return autoencoder
 
 
 def build_generator(config: BEGANConfig):
-    hidden_size = config.hidden_size
-    z_input = Input((hidden_size, ))
-    image_output = build_decoder_layer(config, z_input, name="generator")
-    generator = Model(z_input, image_output, name="generator")
+    decoder = build_decoder(config, name="generator_decoder")
+    generator = Model(decoder.inputs, decoder.outputs, name="generator")
     return generator
+
+
+def build_encoder(config: BEGANConfig, name="encoder"):
+    n_filters = config.n_filters
+    hidden_size = config.hidden_size
+    n_layer = config.n_layer_in_conv
+
+    dx = image_input = Input((config.image_height, config.image_width, 3))
+
+    # output: (N, 32, 32, n_filters)
+    dx = convolution_image_for_encoding(dx, n_filters, strides=(2, 2), name="%s/L1" % name, n_layer=n_layer)
+
+    # output: (N, 16, 16, n_filters*2)
+    dx = convolution_image_for_encoding(dx, n_filters * 2, strides=(2, 2), name="%s/L2" % name, n_layer=n_layer)
+
+    # output: (N, 8, 8, n_filters*3)
+    dx = convolution_image_for_encoding(dx, n_filters * 3, strides=(2, 2), name="%s/L3" % name, n_layer=n_layer)
+
+    # output: (N, 8, 8, n_filters*4)
+    dx = convolution_image_for_encoding(dx, n_filters * 4, strides=(1, 1), name="%s/L4" % name, n_layer=n_layer)
+
+    dx = Flatten()(dx)
+    hidden = Dense(hidden_size, activation='linear', name="%s/Dense" % name)(dx)
+
+    encoder = Container(image_input, hidden, name=name)
+    return encoder
+
+
+def build_decoder(config: BEGANConfig, name):
+    """
+    generator and decoder( of discriminator) have same network structure, but don't share weights.
+    This function takes different input layer, flow another network, and return different output layer.
+    """
+    n_filters = config.n_filters
+    n_layer = config.n_layer_in_conv
+
+    dx = input_z = Input((64, ))
+    dx = Dense((8*8*n_filters), activation='linear', name="%s/Dense" % name)(dx)
+    dx = Reshape((8, 8, n_filters))(dx)
+
+    # output: (N, 16, 16, n_filters)
+    dx = convolution_image_for_decoding(dx, n_filters, upsample=True, name="%s/L1" % name, n_layer=n_layer)
+
+    # output: (N, 32, 32, n_filters)
+    dx = convolution_image_for_decoding(dx, n_filters, upsample=True, name="%s/L2" % name, n_layer=n_layer)
+
+    # output: (N, 64, 64, n_filters)
+    dx = convolution_image_for_decoding(dx, n_filters, upsample=True, name="%s/L3" % name, n_layer=n_layer)
+
+    # output: (N, 64, 64, n_filters)
+    dx = convolution_image_for_decoding(dx, n_filters, upsample=False, name="%s/L4" % name, n_layer=n_layer)
+
+    # output: (N, 64, 64, 3)
+    image_output = Convolution2D(3, (3, 3), padding="same", activation="linear", name="%s/FinalConv" % name)(dx)
+    decoder = Container(input_z, image_output, name=name)
+    return decoder
 
 
 def build_discriminator(config: BEGANConfig, autoencoder: Container):
@@ -79,35 +119,18 @@ def build_discriminator(config: BEGANConfig, autoencoder: Container):
     return discriminator
 
 
-def build_decoder_layer(config: BEGANConfig, input_layer, name):
-    """
-    generator and decoder( of discriminator) have same network structure, but don't share weights.
-    This function takes different input layer, flow another network, and return different output layer.
-    """
-    n_filters = config.n_filters
+def convolution_image_for_encoding(x, filters, strides=(1, 1), name=None, n_layer=2):
+    for i in range(1, n_layer):
+        x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv%d" % (name, i))(x)
 
-    dx = input_layer  # (64, )
-    dx = Dense((8*8*n_filters), activation='linear', name="%s/Dense" % name)(dx)
-    dx = Reshape((8, 8, n_filters))(dx)
-    dx = convolution_image_for_decoding(dx, n_filters, upsample=True, name="%s/L1" % name)   # output: (N, 16, 16, n_filters)
-    dx = convolution_image_for_decoding(dx, n_filters, upsample=True, name="%s/L2" % name)   # output: (N, 32, 32, n_filters)
-    dx = convolution_image_for_decoding(dx, n_filters, upsample=True, name="%s/L3" % name)   # output: (N, 64, 64, n_filters)
-    dx = convolution_image_for_decoding(dx, n_filters, upsample=False, name="%s/L4" % name)  # output: (N, 64, 64, n_filters)
-    image_output = Convolution2D(3, (3, 3), padding="same", activation="linear", name="%s/FinalConv" % name)(dx)  # output: (N, 64, 64, 3), activation shuold be linear?
-    return image_output
-
-
-def convolution_image_for_encoding(in_x, filters, strides=(1, 1), name=None):
-    x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv1" % name)(in_x)
-    # x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv2" % name)(x)
-    x = Convolution2D(filters, (3, 3), activation="elu", padding="same", strides=strides, name="%s/Conv2" % name)(x)
+    x = Convolution2D(filters, (3, 3), activation="elu", padding="same", strides=strides,
+                      name="%s/Conv%d" % (name, n_layer))(x)
     return x
 
 
-def convolution_image_for_decoding(in_x, filters, upsample=None, name=None):
-    x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv1" % name)(in_x)
-    # x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv2" % name)(x)
-    x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv2" % name)(x)
+def convolution_image_for_decoding(x, filters, upsample=None, name=None, n_layer=2):
+    for i in range(1, n_layer+1):
+        x = Convolution2D(filters, (3, 3), activation="elu", padding="same", name="%s/Conv%d" % (name, i))(x)
     if upsample:
         x = UpSampling2D()(x)
     return x

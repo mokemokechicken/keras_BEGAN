@@ -9,3 +9,4 @@ __pycache__
 *.jpg
 pull.sh
 push.sh
+*.csv
