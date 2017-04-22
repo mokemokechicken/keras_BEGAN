@@ -7,3 +7,5 @@ __pycache__
 .env
 *.hd5
 *.jpg
+pull.sh
+push.sh

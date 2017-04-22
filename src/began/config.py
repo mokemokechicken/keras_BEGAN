@@ -27,3 +27,4 @@ class BEGANConfig:
         self.generator_weight_filename = '%s/generator.hd5' % (self.dataset_dir, )
         self.discriminator_weight_filename = '%s/discriminator.hd5' % (self.dataset_dir, )
         self.training_log = '%s/training_log.csv' % (self.generated_dir, )
+        self.training_graph = "%s/training.png" % (self.generated_dir, )
